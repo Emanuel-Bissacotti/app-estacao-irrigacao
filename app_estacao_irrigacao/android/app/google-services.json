@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "366547948318",
+    "project_id": "tcc-app-a94db",
+    "storage_bucket": "tcc-app-a94db.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:366547948318:android:13a11b59efdd7c15912f0f",
+        "android_client_info": {
+          "package_name": "com.example.app_estacao_irrigacao"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBXw_yjNgo3eIa1CAklPeKsR-paVArnvrA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
