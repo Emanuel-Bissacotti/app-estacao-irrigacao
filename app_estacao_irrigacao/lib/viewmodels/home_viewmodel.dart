@@ -1,3 +1,4 @@
+import 'package:app_estacao_irrigacao/pages/irrigation_station_page.dart';
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:app_estacao_irrigacao/models/user.dart';
@@ -151,20 +152,20 @@ class HomeViewModel extends ChangeNotifier {
     }
   }
 
-  // TODO: Isso sera em outra tela
-  Future<bool> sendIrrigationCommand(String command) async {
-    if (!_mqttService.isConnected) {
-      _setError('MQTT não conectado');
-      return false;
-    }
+  // // TODO: Isso sera em outra tela
+  // Future<bool> sendIrrigationCommand(String command) async {
+  //   if (!_mqttService.isConnected) {
+  //     _setError('MQTT não conectado');
+  //     return false;
+  //   }
 
-    try {
-      return await _mqttService.publishIrrigationCommand(command);
-    } catch (e) {
-      _setError('Erro ao enviar comando: $e');
-      return false;
-    }
-  }
+  //   try {
+  //     return await _mqttService.publishIrrigationCommand(command);
+  //   } catch (e) {
+  //     _setError('Erro ao enviar comando: $e');
+  //     return false;
+  //   }
+  // }
 
   Future<void> signOut() async {
     try {
@@ -349,5 +350,17 @@ class HomeViewModel extends ChangeNotifier {
     if (_disposed) return;
     _client = newClient;
     notifyListeners();
+  }
+
+  void stationControllerPage(BuildContext context, IrrigationStation irrigationStation) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => IrrigationStationPage(
+          mqttService: _mqttService,
+          irrigationStation: irrigationStation,
+          userId: _client.uid,
+        ),
+      ),
+    );
   }
 }

@@ -249,7 +249,7 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
               onTap: () async {
-                // TODO: Ir para outra tela
+                viewModel.stationControllerPage(context, station);
               },
             ),
           ),
@@ -323,8 +323,6 @@ class _HomePageState extends State<HomePage> {
         return AddIrrigationStationDialog(viewModel: viewModel);
       },
     );
-
-    // StreamProvider detecta automaticamente mudanças - não precisa recarregar
   }
 
   Future<void> _showEditStationDialog(BuildContext context, HomeViewModel viewModel, IrrigationStation station) async {
@@ -340,7 +338,5 @@ class _HomePageState extends State<HomePage> {
         );
       },
     );
-
-    // StreamProvider detecta automaticamente mudanças - não precisa recarregar
   }
 }

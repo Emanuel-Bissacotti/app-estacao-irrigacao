@@ -53,7 +53,6 @@ class MqttService {
       _client!.autoReconnect = false; // Desabilitar auto-reconnect para evitar loops
       _client!.resubscribeOnAutoReconnect = false;
       
-      // Desabilitar logging detalhado agora que sabemos que funciona
       _client!.logging(on: false);
       
       _client!.onConnected = _onConnected;
@@ -304,7 +303,7 @@ class MqttService {
     }
     
     try {
-      const topic = 'esp32/irrigacao';
+      const topic = 'esp32/';
       
       final builder = MqttClientPayloadBuilder();
       builder.addString(command);

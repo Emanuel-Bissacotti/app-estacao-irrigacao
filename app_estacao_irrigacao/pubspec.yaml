@@ -15,6 +15,7 @@ dependencies:
   provider: ^6.1.1
   mqtt_client: ^10.2.0
   flutter_slidable: ^3.0.1
+  fl_chart: ^0.66.2
 
 dev_dependencies:
   flutter_test:
