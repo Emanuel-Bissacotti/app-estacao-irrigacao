@@ -54,8 +54,10 @@ class _IrrigationStationPageState extends State<IrrigationStationPage> {
                 children: [
                   const Text("Dados Atuais: ", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
-                  if (viewModel.hasData)
+                  if (viewModel.hasData) ...[
                     _buildSensorDataDisplay(viewModel.currentSensorData!)
+                    
+                  ]
                   else
                     const Card(
                       child: Padding(
@@ -176,8 +178,9 @@ class _IrrigationStationPageState extends State<IrrigationStationPage> {
   Widget _buildSensorDataDisplay(SensorData sensorData) {
     return Padding(
       padding: const EdgeInsets.all(8.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           if (sensorData.temperature != null)
             Chip(
@@ -187,7 +190,7 @@ class _IrrigationStationPageState extends State<IrrigationStationPage> {
               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               labelPadding: const EdgeInsets.symmetric(horizontal: 4.0),
             ),
-            const SizedBox(height: 4.0),
+            const SizedBox(width: 4.0),
           if (sensorData.humidity != null)
             Chip(
               label: Text('${sensorData.humidity?.toStringAsFixed(1)}%'),
@@ -196,7 +199,7 @@ class _IrrigationStationPageState extends State<IrrigationStationPage> {
               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               labelPadding: const EdgeInsets.symmetric(horizontal: 4.0),
             ),
-            const SizedBox(height: 4.0),
+            const SizedBox(width: 4.0),
           if (sensorData.soilMoisture != null)
             Chip(
               label: Text('Solo: ${sensorData.soilMoisture?.toStringAsFixed(1) ?? '0.0'}%'),
@@ -205,7 +208,7 @@ class _IrrigationStationPageState extends State<IrrigationStationPage> {
               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               labelPadding: const EdgeInsets.symmetric(horizontal: 4.0),
             ),
-            const SizedBox(height: 4.0),
+            const SizedBox(width: 4.0),
         ],
       ),
     );

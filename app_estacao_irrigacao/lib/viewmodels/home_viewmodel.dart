@@ -152,21 +152,6 @@ class HomeViewModel extends ChangeNotifier {
     }
   }
 
-  // // TODO: Isso sera em outra tela
-  // Future<bool> sendIrrigationCommand(String command) async {
-  //   if (!_mqttService.isConnected) {
-  //     _setError('MQTT não conectado');
-  //     return false;
-  //   }
-
-  //   try {
-  //     return await _mqttService.publishIrrigationCommand(command);
-  //   } catch (e) {
-  //     _setError('Erro ao enviar comando: $e');
-  //     return false;
-  //   }
-  // }
-
   Future<void> signOut() async {
     try {
       _setLoading(true);
