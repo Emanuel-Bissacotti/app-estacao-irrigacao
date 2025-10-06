@@ -1,6 +1,7 @@
 import 'package:app_estacao_irrigacao/pages/login_page.dart';
 import 'package:app_estacao_irrigacao/pages/home_page.dart';
 import 'package:app_estacao_irrigacao/models/user.dart';
+import 'package:app_estacao_irrigacao/config/flavor_config.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -13,8 +14,18 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
   
-  await FirebaseAuth.instance.useAuthEmulator('localhost', 9099);
-  FirebaseFirestore.instance.useFirestoreEmulator('localhost', 8080);
+  // Configura emuladores apenas em desenvolvimento
+  if (FlavorConfig.isDevelopment) {
+    await FirebaseAuth.instance.useAuthEmulator(
+      FlavorConfig.authEmulatorHost, 
+      FlavorConfig.authEmulatorPort
+    );
+    FirebaseFirestore.instance.useFirestoreEmulator(
+      FlavorConfig.firestoreEmulatorHost, 
+      FlavorConfig.firestoreEmulatorPort
+    );
+  }
+  
   try {
     await FirebaseFirestore.instance.enablePersistence(
       const PersistenceSettings(synchronizeTabs: true),
@@ -36,8 +47,9 @@ class MainApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
-      home: AuthChecker()
+    return MaterialApp(
+      title: FlavorConfig.appName,
+      home: const AuthChecker()
     );
   }
 }
