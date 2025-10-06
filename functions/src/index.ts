@@ -16,7 +16,12 @@ import * as admin from "firebase-admin";
 // Inicializa o Firebase Admin
 admin.initializeApp();
 
-export const scheduleDataGet = functions.pubsub.schedule('every 1 hours').onRun(async (context) => {
+export const scheduleDataGet = functions
+  .region('us-central1')
+  .pubsub
+  .schedule('every 1 hours')
+  .timeZone('America/Sao_Paulo')
+  .onRun(async (context) => {
   functions.logger.info("-----------Start scheduledDataGet--------------");
   
   try {
@@ -51,6 +56,11 @@ export const scheduleDataGet = functions.pubsub.schedule('every 1 hours').onRun(
           continue;
         }
         
+        if (!station.uid || station.uid.trim() === '') {
+          functions.logger.warn(`Estação sem UID válido encontrada, pulando...`);
+          continue;
+        }
+        
         try {
           const sensorData = await mqttService.readSensorData(station.urlMqtt, station.uid);
           functions.logger.info("Dados do sensor recebidos:", { stationId: station.uid, ...sensorData });
@@ -72,11 +82,15 @@ export const scheduleDataGet = functions.pubsub.schedule('every 1 hours').onRun(
                               
           if (hasValidData) {
             try {
+              // Construir caminho de forma mais segura
+              const collectionPath = `users/${user.uid}/irrigation_stations/${station.uid}/data`;
+              functions.logger.info(`Salvando dados no caminho: ${collectionPath}`);
+              
               await firestoreService.addData(
                 sensorData.soilMoisture,
                 sensorData.humidity,
                 sensorData.temperature,
-                `users/${user.uid}/irrigation_stations/${station.uid}/data`,
+                collectionPath,
                 irrigatedAmount
               );
               functions.logger.info(`Dados salvos no Firestore para estação ${station.uid}`);
@@ -98,14 +112,4 @@ export const scheduleDataGet = functions.pubsub.schedule('every 1 hours').onRun(
   
   functions.logger.info("-----------End scheduledDataGet--------------");
   return null;
-});
-
-// Função de teste simples
-export const testFunction = functions.https.onRequest((request, response) => {
-  functions.logger.info("Função de teste executada com sucesso!");
-  response.json({
-    status: "success",
-    message: "Função está funcionando corretamente!",
-    timestamp: new Date().toISOString()
-  });
 });
