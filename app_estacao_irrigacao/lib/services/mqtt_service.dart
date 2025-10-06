@@ -5,208 +5,160 @@ import 'package:mqtt_client/mqtt_server_client.dart';
 import 'package:app_estacao_irrigacao/models/sensor_data.dart';
 
 class MqttService {
-  String _brokerHost = '';
+  final Map<String, MqttServerClient> _clients = {};
+  final Map<String, Timer> _readSensorTimers = {};
+  final Map<String, String> _stationBrokers = {};
   
-  MqttServerClient? _client;
-  Timer? _readSensorTimer;
-  
-  bool _isConnected = false;
   String? _lastError;
   
   final StreamController<SensorData> _sensorDataController = StreamController<SensorData>.broadcast();
   final StreamController<bool> _connectionController = StreamController<bool>.broadcast();
   
-  bool get isConnected => _isConnected;
+  bool get isConnected => _clients.isNotEmpty && _clients.values.any((client) => 
+    client.connectionStatus?.state == MqttConnectionState.connected);
   String? get lastError => _lastError;
   Stream<SensorData> get sensorDataStream => _sensorDataController.stream;
   Stream<bool> get connectionStream => _connectionController.stream;
 
-  String? _currentStationId;
+  bool isStationConnected(String stationId) {
+    final client = _clients[stationId];
+    return client != null && client.connectionStatus?.state == MqttConnectionState.connected;
+  }
 
-  Future<bool> connectToMqtt(String email, String password, String stationMqttUrl) async {
+  Future<bool> connectToStation(String stationId, String email, String password, String brokerUrl) async {
     try {
       _lastError = null;
       
-      await disconnect();
-      
-      _brokerHost = stationMqttUrl;
-      
-      // Validar se a URL do broker não está vazia
-      if (_brokerHost.isEmpty) {
-        throw Exception('URL do broker MQTT não pode estar vazia');
+      if (brokerUrl.isEmpty || email.isEmpty || password.isEmpty) {
+        throw Exception('Parâmetros de conexão inválidos');
       }
       
-      // Validar se as credenciais não estão vazias
-      if (email.isEmpty || password.isEmpty) {
-        throw Exception('Email e senha MQTT são obrigatórios');
+      if (_clients.containsKey(stationId)) {
+        await disconnectStation(stationId);
       }
-      _currentStationId = email.split('@').first;
       
-      final clientId = 'app_irrigacao_${Random().nextInt(10000)}';
+      final clientId = 'app_irrigacao_${stationId}_${Random().nextInt(10000)}';
+      final client = MqttServerClient(brokerUrl, clientId);
       
-      _client = MqttServerClient(_brokerHost, clientId);
+      client.port = 8883;
+      client.secure = true;
+      client.keepAlivePeriod = 60;
+      client.connectTimeoutPeriod = 30000;
+      client.autoReconnect = false;
+      client.resubscribeOnAutoReconnect = false;
+      client.logging(on: false);
       
-      _client!.port = 8883;
-      _client!.secure = true;
-      _client!.keepAlivePeriod = 60;
-      _client!.connectTimeoutPeriod = 30000; // Aumentar timeout para 30 segundos
-      _client!.autoReconnect = false; // Desabilitar auto-reconnect para evitar loops
-      _client!.resubscribeOnAutoReconnect = false;
-      
-      _client!.logging(on: false);
-      
-      _client!.onConnected = _onConnected;
-      _client!.onDisconnected = _onDisconnected;
+      client.onConnected = () => _onStationConnected(stationId);
+      client.onDisconnected = () => _onStationDisconnected(stationId);
       
       final connMessage = MqttConnectMessage()
           .withClientIdentifier(clientId)
           .withWillTopic('lwt')
-          .withWillMessage('Client disconnected')
+          .withWillMessage('Station $stationId disconnected')
           .startClean()
           .withWillQos(MqttQos.atLeastOnce);
       
-      if (email.isNotEmpty && password.isNotEmpty) {
-        connMessage.authenticateAs(email, password);
-      }
-            
-      _client!.connectionMessage = connMessage;
+      connMessage.authenticateAs(email, password);
+      client.connectionMessage = connMessage;
       
-      await _client!.connect();
+      await client.connect();
       
-      if (_client!.connectionStatus!.state == MqttConnectionState.connected) {
-        _isConnected = true;
-        _connectionController.add(true);
+      if (client.connectionStatus!.state == MqttConnectionState.connected) {
+        _clients[stationId] = client;
+        _stationBrokers[stationId] = brokerUrl;
         
-        await _setupSubscriptions();
-        _startReadSensorTimer();
+        await _setupStationSubscriptions(stationId, client);
+        
+        _connectionController.add(true);
         
         return true;
       } else {
-        final status = _client!.connectionStatus!;
-        String errorMsg = 'Falha na conexão: State=${status.state}';
-        if (status.returnCode != null) {
-          errorMsg += ', Code=${status.returnCode}';
-        }
-        throw Exception(errorMsg);
+        _lastError = 'Falha na conexão da estação $stationId';
+        return false;
       }
       
     } catch (e) {
-      String errorMsg = 'Erro ao conectar MQTT: $e';
-      
-      // Tratamento específico para diferentes tipos de erro
-      if (e.toString().contains('Connection reset by peer')) {
-        errorMsg = 'Credenciais MQTT incorretas ou servidor indisponível. Verifique email e senha do HiveMQ Cloud.';
-      } else if (e.toString().contains('Connection refused')) {
-        errorMsg = 'Servidor MQTT não encontrado. Verifique a URL do broker.';
-      } else if (e.toString().contains('Network is unreachable')) {
-        errorMsg = 'Sem conexão com a internet. Verifique sua rede.';
-      } else if (e.toString().contains('timeout')) {
-        errorMsg = 'Timeout na conexão MQTT. Tente novamente.';
-      }
-      
-      _lastError = errorMsg;
-      _isConnected = false;
-      _connectionController.add(false);
+      _lastError = 'Erro ao conectar estação $stationId: $e';
       return false;
     }
   }
 
-  Future<void> _setupSubscriptions() async {
-    if (_client == null || !_isConnected) return;
+  Future<Map<String, bool>> connectToMultipleStations(
+    String email, 
+    String password, 
+    Map<String, String> stationBrokers
+  ) async {
+    final results = <String, bool>{};
     
+    final futures = stationBrokers.entries.map((entry) async {
+      final stationId = entry.key;
+      final brokerUrl = entry.value;
+      
+      final success = await connectToStation(stationId, email, password, brokerUrl);
+      results[stationId] = success;
+      
+      return success;
+    });
+    
+    await Future.wait(futures);
+    
+    return results;
+  }
+
+  Future<bool> connectToMqtt(String email, String password, String stationMqttUrl, {String? stationId, List<String>? stationIds}) async {
+    final id = stationId ?? email.split('@').first;
+    return await connectToStation(id, email, password, stationMqttUrl);
+  }
+
+  void _onStationConnected(String stationId) {
+    _connectionController.add(true);
+  }
+
+  void _onStationDisconnected(String stationId) {
+    _clients.remove(stationId);
+    _stationBrokers.remove(stationId);
+    _readSensorTimers[stationId]?.cancel();
+    _readSensorTimers.remove(stationId);
+    
+    if (_clients.isEmpty) {
+      _connectionController.add(false);
+    }
+  }
+
+  Future<void> _setupStationSubscriptions(String stationId, MqttServerClient client) async {
     try {
       final topics = [
         'esp32/umidade',
-        'esp32/temperatura',
+        'esp32/temperatura', 
         'esp32/umidade-solo',
       ];
       
       for (String topic in topics) {
-        _client!.subscribe(topic, MqttQos.atLeastOnce);
+        client.subscribe(topic, MqttQos.atLeastOnce);
       }
       
-      _client!.updates!.listen(_onMessageReceived);
+      client.updates!.listen((List<MqttReceivedMessage<MqttMessage>> messages) {
+        for (var message in messages) {
+          final topic = message.topic;
+          final payload = MqttPublishPayload.bytesToStringAsString(
+            (message.payload as MqttPublishMessage).payload.message
+          );
+          
+          _processSensorMessage(stationId, topic, payload);
+        }
+      });
       
-      // await Future.delayed(Duration(seconds: 1));
-      await testMqttCommunication();
+      await _testStationCommunication(stationId, client);
       
-    } catch (e) {
-      _lastError = 'Erro ao configurar subscrições: $e';
-    }
-  }
-
-  // Iniciar timer para ler sensores a cada 5 segundos
-  void _startReadSensorTimer() {
-    _readSensorTimer?.cancel();
-    
-    _readSensorTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
-      _requestSensorReading();
-    });
-    
-    // Fazer primeira leitura imediatamente
-    _requestSensorReading();
-  }
-
-  // Solicitar leitura dos sensores
-  Future<void> _requestSensorReading() async {
-    if (_client == null || !_isConnected) {
-      return;
-    }
-    
-    try {
-      const topic = 'esp32/';
-      const message = 'Ler sensor';
-      
-      final builder = MqttClientPayloadBuilder();
-      builder.addString(message);
-      
-      _client!.publishMessage(topic, MqttQos.atLeastOnce, builder.payload!);
+      _startReadSensorTimer(stationId, client);
       
     } catch (e) {
-      _lastError = 'Erro ao solicitar leitura de sensores: $e';
+      // Erro ao configurar subscrições
     }
   }
 
-  // Callback quando conectado
-  void _onConnected() {
-    _isConnected = true;
-    _lastError = null;
-    _connectionController.add(true);
-  }
-
-  // Callback quando desconectado
-  void _onDisconnected() {
-    _isConnected = false;
-    _connectionController.add(false);
-    _readSensorTimer?.cancel();
-  }
-
-  // Callback quando inscrito em tópico
-  void _onSubscribed(String topic) {
-    // Subscription confirmada
-  }
-
-  // Callback para auto-reconexão
-  void _onAutoReconnect() {
-    // Auto-reconectando
-  }
-
-  // Processar mensagens recebidas
-  void _onMessageReceived(List<MqttReceivedMessage<MqttMessage?>> messages) {
-    for (var message in messages) {
-      final topic = message.topic;
-      final payload = MqttPublishPayload.bytesToStringAsString(
-        (message.payload as MqttPublishMessage).payload.message
-      );
-      
-      _processSensorMessage(topic, payload);
-    }
-  }
-
-  // Processar mensagem de sensor específico
-  void _processSensorMessage(String topic, String payload) {
+  void _processSensorMessage(String stationId, String topic, String payload) {
     try {
-      // Se for o tópico de teste, apenas retornar
       if (topic.startsWith('teste/')) {
         return;
       }
@@ -216,24 +168,19 @@ class MqttService {
         return;
       }
       
-      final stationId = _currentStationId ?? 'unknown';
-      
-      // Criar ou atualizar dados do sensor baseado no tópico
-      SensorData sensorData;
-      
-      // Determinar tipo de sensor baseado no tópico (suporte aos tópicos esp32/)
       String sensorType = '';
       
       if (topic.contains('umidade-solo')) {
         sensorType = 'umidade-solo';
       } else if (topic.contains('umidade')) {
-        sensorType = 'umidade';
+        sensorType = 'umidade';  
       } else if (topic.contains('temperatura')) {
         sensorType = 'temperatura';
       }
       
-      // Aceitar mensagens dos tópicos esp32/ diretamente
       if (topic.startsWith('esp32/') && sensorType.isNotEmpty) {
+        SensorData sensorData;
+        
         switch (sensorType) {
           case 'umidade':
             sensorData = SensorData(
@@ -257,11 +204,7 @@ class MqttService {
             return;
         }
         
-        // Emitir dados do sensor
         _sensorDataController.add(sensorData);
-        
-      } else {
-        // Tópico não reconhecido
       }
       
     } catch (e) {
@@ -269,66 +212,148 @@ class MqttService {
     }
   }
 
-  // Teste de comunicação MQTT - publicar em tópico de teste
-  Future<bool> testMqttCommunication() async {
-    if (_client == null || !_isConnected) {
-      return false;
-    }
-    
+  Future<void> _testStationCommunication(String stationId, MqttServerClient client) async {
     try {
-      // Publicar em um tópico de teste genérico
       const testTopic = 'teste/app_flutter';
-      const testMessage = 'Hello from Flutter App!';
+      final testMessage = 'Hello from Flutter App to $stationId!';
       
       final builder = MqttClientPayloadBuilder();
       builder.addString(testMessage);
       
-      _client!.publishMessage(testTopic, MqttQos.atLeastOnce, builder.payload!);
-      
-      // Também subscrever ao tópico de teste para ver se recebemos de volta
-      _client!.subscribe(testTopic, MqttQos.atLeastOnce);
-      
-      return true;
+      client.publishMessage(testTopic, MqttQos.atLeastOnce, builder.payload!);
+      client.subscribe(testTopic, MqttQos.atLeastOnce);
       
     } catch (e) {
-      return false;
+      // Erro no teste de comunicação
     }
   }
 
-  // Publicar comando de irrigação
-  Future<bool> publishIrrigationCommand(String command) async {
-    if (_client == null || !_isConnected) {
-      _lastError = 'MQTT não conectado';
+  void _startReadSensorTimer(String stationId, MqttServerClient client) {
+    _readSensorTimers[stationId]?.cancel();
+    
+    _readSensorTimers[stationId] = Timer.periodic(const Duration(seconds: 15), (timer) async {
+      if (!isStationConnected(stationId)) {
+        timer.cancel();
+        _readSensorTimers.remove(stationId);
+        return;
+      }
+      
+      await _requestSensorData(stationId, client);
+    });
+    
+    _requestSensorData(stationId, client);
+  }
+
+  Future<void> _requestSensorData(String stationId, MqttServerClient client) async {
+    try {
+      final builder = MqttClientPayloadBuilder();
+      builder.addString('Ler sensor');
+      
+      const topic = 'esp32/';
+      
+      client.publishMessage(topic, MqttQos.atLeastOnce, builder.payload!);
+      
+    } catch (e) {
+      // Erro ao solicitar dados
+    }
+  }
+
+  Future<bool> publishToStation(String stationId, String topic, String message) async {
+    final client = _clients[stationId];
+    if (client == null || !isStationConnected(stationId)) {
       return false;
     }
     
     try {
-      const topic = 'esp32/';
-      
       final builder = MqttClientPayloadBuilder();
-      builder.addString(command);
+      builder.addString(message);
       
-      _client!.publishMessage(topic, MqttQos.atLeastOnce, builder.payload!);
+      client.publishMessage(topic, MqttQos.atLeastOnce, builder.payload!);
       return true;
-      
     } catch (e) {
-      _lastError = 'Erro ao publicar comando: $e';
       return false;
     }
   }
 
-  // Desconectar
-  Future<void> disconnect() async {
-    try {
-      _readSensorTimer?.cancel();
-      _readSensorTimer = null;
+  Future<bool> publishIrrigationCommand(String command) async {
+    if (_clients.isEmpty) {
+      return false;
+    }
+    
+    if (_clients.length == 1) {
+      final stationId = _clients.keys.first;
+      return await publishToStation(stationId, 'esp32/irrigacao', command);
+    }
+    
+    bool anySuccess = false;
+    for (String stationId in _clients.keys) {
+      final success = await publishToStation(stationId, 'esp32/', command);
+      if (success) anySuccess = true;
+    }
+    
+    return anySuccess;
+  }
+
+  Future<bool> publishIrrigationCommandToStation(String stationId, String command) async {
+    return await publishToStation(stationId, 'esp32/', command);
+  }
+
+  Future<bool> requestSensorReading(String stationId) async {
+    final client = _clients[stationId];
+    if (client == null || !isStationConnected(stationId)) {
+      return false;
+    }
+    
+    await _requestSensorData(stationId, client);
+    return true;
+  }
+
+  Future<void> requestAllSensorsReading() async {
+    for (var entry in _clients.entries) {
+      final stationId = entry.key;
+      final client = entry.value;
       
-      if (_client != null) {
-        _client!.disconnect();
-        _client = null;
+      if (isStationConnected(stationId)) {
+        await _requestSensorData(stationId, client);
+      }
+    }
+  }
+
+  Future<void> disconnectStation(String stationId) async {
+    try {
+      _readSensorTimers[stationId]?.cancel();
+      _readSensorTimers.remove(stationId);
+      
+      final client = _clients[stationId];
+      if (client != null) {
+        client.disconnect();
+        _clients.remove(stationId);
       }
       
-      _isConnected = false;
+      _stationBrokers.remove(stationId);
+      
+      if (_clients.isEmpty) {
+        _connectionController.add(false);
+      }
+      
+    } catch (e) {
+      // Erro ao desconectar estação
+    }
+  }
+
+  Future<void> disconnect() async {
+    try {
+      for (var timer in _readSensorTimers.values) {
+        timer.cancel();
+      }
+      _readSensorTimers.clear();
+      
+      for (var client in _clients.values) {
+        client.disconnect();
+      }
+      
+      _clients.clear();
+      _stationBrokers.clear();
       _lastError = null;
       _connectionController.add(false);
       
@@ -337,16 +362,33 @@ class MqttService {
     }
   }
 
-  // Verificar conexão
   Future<bool> checkConnection() async {
-    return _client?.connectionStatus?.state == MqttConnectionState.connected;
+    return _clients.values.any((client) => 
+      client.connectionStatus?.state == MqttConnectionState.connected);
   }
 
-  // Limpar recursos
+  Map<String, bool> getAllStationsStatus() {
+    final status = <String, bool>{};
+    for (var entry in _clients.entries) {
+      status[entry.key] = entry.value.connectionStatus?.state == MqttConnectionState.connected;
+    }
+    return status;
+  }
+
   void dispose() {
-    _readSensorTimer?.cancel();
+    for (var timer in _readSensorTimers.values) {
+      timer.cancel();
+    }
+    
+    for (var client in _clients.values) {
+      client.disconnect();
+    }
+    
+    _clients.clear();
+    _readSensorTimers.clear();
+    _stationBrokers.clear();
+    
     _sensorDataController.close();
     _connectionController.close();
-    disconnect();
   }
 }
