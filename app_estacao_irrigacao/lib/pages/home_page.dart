@@ -57,7 +57,6 @@ class _HomePageState extends State<HomePage> {
             if (stations.isNotEmpty && 
                 viewModel.isMqttConfigured && 
                 !viewModel.isMqttConnected &&
-                viewModel.activeStation == null &&
                 !_hasAttemptedAutoConnect) {
               _hasAttemptedAutoConnect = true;
               viewModel.connectToAllStations(stations);
@@ -176,13 +175,14 @@ class _HomePageState extends State<HomePage> {
       itemCount: stations.length,
       itemBuilder: (context, index) {
         final station = stations[index];
-        final isActive = viewModel.activeStation?.uid == station.uid;
-        final isConnected = viewModel.isMqttConfigured;
+        final isConnected = viewModel.isStationConnected(station.uid);
+        final sensorData = viewModel.getSensorDataForStation(station.uid);
+        final isMqttConfigured = viewModel.isMqttConfigured;
         
         return Card(
           margin: const EdgeInsets.only(bottom: 8),
-          color: isConnected && isActive ? Colors.green[50] : 
-                 isConnected ? Colors.blue[50] : 
+          color: isConnected && viewModel.isMqttConnected ? Colors.green[50] : 
+                 isMqttConfigured ? Colors.blue[50] : 
                  Colors.grey[50],
           child: Slidable(
             startActionPane: ActionPane(
@@ -207,9 +207,9 @@ class _HomePageState extends State<HomePage> {
                 children: [
                   Icon(
                     Icons.water_drop, 
-                    color: isConnected ? Colors.blue : Colors.grey
+                    color: isMqttConfigured ? Colors.blue : Colors.grey
                   ),
-                  if (isActive && viewModel.isMqttConnected)
+                  if (isConnected && viewModel.isMqttConnected)
                     Positioned(
                       right: 0,
                       bottom: 0,
@@ -229,19 +229,19 @@ class _HomePageState extends State<HomePage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    isActive && viewModel.isMqttConnected ? 'Conectado via MQTT' :
-                    isConnected ? 'MQTT configurado' : 
+                    isConnected && viewModel.isMqttConnected ? 'Conectado via MQTT' :
+                    isMqttConfigured ? 'MQTT configurado' : 
                     'Aguardando configuração MQTT',
                     style: TextStyle(
-                      color: isActive && viewModel.isMqttConnected ? Colors.green :
-                             isConnected ? Colors.blue : 
+                      color: isConnected && viewModel.isMqttConnected ? Colors.green :
+                             isMqttConfigured ? Colors.blue : 
                              Colors.grey,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  if (isActive && viewModel.currentSensorData != null)
-                    _buildSensorDataDisplay(viewModel.currentSensorData ?? SensorData(stationId: ''))
-                  else if (isActive && isConnected)
+                  if (isConnected && sensorData != null)
+                    _buildSensorDataDisplay(sensorData)
+                  else if (isConnected && isMqttConfigured)
                     const Text(
                       'Aguardando dados dos sensores...',
                       style: TextStyle(color: Colors.orange, fontStyle: FontStyle.italic),
