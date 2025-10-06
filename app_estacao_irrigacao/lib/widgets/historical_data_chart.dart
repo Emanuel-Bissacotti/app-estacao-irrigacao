@@ -305,7 +305,7 @@ class HistoricalDataChart extends StatelessWidget {
         // Verificar se há irrigação neste ponto
         String irrigationInfo = '';
         if (closestDataPoint.irrigatedMillimeters != null && closestDataPoint.irrigatedMillimeters! > 0) {
-          irrigationInfo = '\nIrrigação: ${closestDataPoint.irrigatedMillimeters!.toStringAsFixed(1)}mm';
+          irrigationInfo = '\nIrrigação: ${closestDataPoint.irrigatedMillimeters!.toStringAsFixed(1)}ml';
         }
 
         return LineTooltipItem(
@@ -325,7 +325,7 @@ class HistoricalDataChart extends StatelessWidget {
         _buildLegendItem('Temperatura (°C)', Colors.red),
         _buildLegendItem('Umidade do Ar (%)', Colors.cyan),
         _buildLegendItem('Umidade do Solo (%)', Colors.green),
-        _buildLegendItemVertical('Irrigação (mm)', Colors.blue),
+        _buildLegendItemVertical('Irrigação (ml)', Colors.blue),
       ],
     );
   }
