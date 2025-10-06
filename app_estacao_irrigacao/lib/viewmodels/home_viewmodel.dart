@@ -17,26 +17,21 @@ class HomeViewModel extends ChangeNotifier {
   bool _isLoading = false;
   String? _errorMessage;
   bool _disposed = false;
-  bool _isConnecting = false; // Prevenir conexões simultâneas
-  DateTime? _lastConnectionAttempt; // Cooldown entre tentativas
+  bool _isConnecting = false;
+  DateTime? _lastConnectionAttempt;
   
-  // Dados dos sensores da estação ativa
-  IrrigationStation? _activeStation;
-  SensorData? _currentSensorData;
+  final Map<String, SensorData> _stationsData = {};
+  final Set<String> _connectedStations = {};
   StreamSubscription<SensorData>? _sensorSubscription;
   StreamSubscription<bool>? _connectionSubscription;
 
   HomeViewModel(this._client, this._authService, this._mqttService) {
-    // Escutar mudanças na conexão MQTT
     _connectionSubscription = _mqttService.connectionStream.listen(_onMqttConnectionChanged);
   }
 
-  // Getters
   Client get client => _client;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
-  IrrigationStation? get activeStation => _activeStation;
-  SensorData? get currentSensorData => _currentSensorData;
   bool get isMqttConnected => _mqttService.isConnected;
   
   bool get isMqttConfigured {
@@ -44,6 +39,21 @@ class HomeViewModel extends ChangeNotifier {
     final passwordMqtt = _client.passwordMqtt;
     return emailMqtt != null && emailMqtt.isNotEmpty && 
            passwordMqtt != null && passwordMqtt.isNotEmpty;
+  }
+  
+  SensorData? get currentSensorData {
+    if (_stationsData.isNotEmpty) {
+      return _stationsData.values.first;
+    }
+    return null;
+  }
+
+  SensorData? getSensorDataForStation(String stationId) {
+    return _stationsData[stationId];
+  }
+  
+  bool isStationConnected(String stationId) {
+    return _mqttService.isStationConnected(stationId);
   }
 
   @override
@@ -55,23 +65,39 @@ class HomeViewModel extends ChangeNotifier {
     super.dispose();
   }
 
-  // Callback para mudanças na conexão MQTT
   void _onMqttConnectionChanged(bool isConnected) {
     if (!_disposed) {
+      if (!isConnected) {
+        _connectedStations.clear();
+        _stationsData.clear();
+      }
       notifyListeners();
     }
   }
 
-  // Conectar MQTT para uma estação específica
-  Future<bool> connectToStation(IrrigationStation station, {bool isManualConnection = false}) async {
-    if (!isMqttConfigured) {
-      _setError('Configure o MQTT primeiro');
-      return false;
+  Future<void> connectToAllStations(List<IrrigationStation> stations) async {    
+    if (!isMqttConfigured || stations.isEmpty) {
+      return;
+    }
+    
+    if (_mqttService.isConnected) {
+      _connectedStations.clear();
+      for (var station in stations) {
+        _connectedStations.add(station.uid);
+      }
+      notifyListeners();
+      return;
     }
 
-    // Prevenir conexões simultâneas
     if (_isConnecting) {
-      return false;
+      return;
+    }
+
+    if (_lastConnectionAttempt != null) {
+      final timeSinceLastAttempt = DateTime.now().difference(_lastConnectionAttempt!);
+      if (timeSinceLastAttempt.inSeconds < 10) {
+        return;
+      }
     }
 
     final emailMqtt = _client.emailMqtt;
@@ -79,62 +105,83 @@ class HomeViewModel extends ChangeNotifier {
     
     if (emailMqtt == null || passwordMqtt == null) {
       _setError('Credenciais MQTT não configuradas');
-      return false;
+      return;
     }
 
     try {
       _isConnecting = true;
       _setLoading(true);
       _clearError();
+      _lastConnectionAttempt = DateTime.now();
 
-      // Se é conexão manual, atualizar o timestamp para evitar conflitos com auto-conexão
-      if (isManualConnection) {
-        _lastConnectionAttempt = DateTime.now();
+      Map<String, String> stationBrokers = {};
+      for (var station in stations) {
+        stationBrokers[station.uid] = station.urlMqtt;
       }
-
-      bool success = await _mqttService.connectToMqtt(
+      
+      final results = await _mqttService.connectToMultipleStations(
         emailMqtt,
         passwordMqtt,
-        station.urlMqtt,
+        stationBrokers,
       );
+      
+      bool hasAnyConnection = results.values.any((success) => success);
 
-      if (success) {
-        _activeStation = station;
-        _currentSensorData = null;
+      if (hasAnyConnection) {
+        _connectedStations.clear();
+        for (var entry in results.entries) {
+          if (entry.value) {
+            _connectedStations.add(entry.key);
+          }
+        }
         
-        // Escutar dados dos sensores
         _sensorSubscription?.cancel();
         _sensorSubscription = _mqttService.sensorDataStream.listen(_onSensorDataReceived);
         
+        final connectedCount = _connectedStations.length;
+        debugPrint('🔗 Conectado a $connectedCount/${stations.length} estação(ões): ${_connectedStations.join(", ")}');
+        
         if (!_disposed) notifyListeners();
-        return true;
       } else {
-        _setError(_mqttService.lastError ?? 'Erro ao conectar com a estação');
-        return false;
+        _setError(_mqttService.lastError ?? 'Erro ao conectar com as estações');
       }
     } catch (e) {
       _setError('Erro ao conectar: $e');
-      return false;
+      debugPrint('❌ Erro na conexão: $e');
     } finally {
       _isConnecting = false;
       _setLoading(false);
     }
   }
 
+  Future<bool> connectToStation(IrrigationStation station) async {
+    await connectToAllStations([station]);
+    return _connectedStations.contains(station.uid);
+  }
+
   void _onSensorDataReceived(SensorData sensorData) {
     if (!_disposed) {
-      if (_currentSensorData == null) {
-        _currentSensorData = sensorData;
-      } else {
-        final currentData = _currentSensorData!;
-        _currentSensorData = currentData.copyWith(
+      String stationId = sensorData.stationId;
+      
+      if (!_connectedStations.contains(stationId) && _connectedStations.isNotEmpty) {
+        stationId = _connectedStations.first;
+      }
+      
+      debugPrint('📡 Dados recebidos para estação: $stationId - Temp: ${sensorData.temperature}, Umidade: ${sensorData.humidity}, Solo: ${sensorData.soilMoisture}');
+      
+      if (_stationsData.containsKey(stationId)) {
+        final currentData = _stationsData[stationId]!;
+        _stationsData[stationId] = currentData.copyWith(
           temperature: sensorData.temperature ?? currentData.temperature,
           humidity: sensorData.humidity ?? currentData.humidity,
           soilMoisture: sensorData.soilMoisture ?? currentData.soilMoisture,
           timestamp: sensorData.timestamp,
         );
+      } else {
+        _stationsData[stationId] = sensorData.copyWith(stationId: stationId);
       }
       
+      debugPrint('💾 Total de estações com dados: ${_stationsData.length}');
       notifyListeners();
     }
   }
@@ -142,8 +189,8 @@ class HomeViewModel extends ChangeNotifier {
   Future<void> disconnectFromStation() async {
     try {
       await _mqttService.disconnect();
-      _activeStation = null;
-      _currentSensorData = null;
+      _connectedStations.clear();
+      _stationsData.clear();
       _sensorSubscription?.cancel();
       
       if (!_disposed) notifyListeners();
@@ -156,10 +203,10 @@ class HomeViewModel extends ChangeNotifier {
     try {
       _setLoading(true);
       
-      // Desconectar do protocolo MQTT antes de sair
       if (isMqttConnected) {
         await _mqttService.disconnect();
-        _activeStation = null;
+        _connectedStations.clear();
+        _stationsData.clear();
         notifyListeners();
       }
       
@@ -217,20 +264,25 @@ class HomeViewModel extends ChangeNotifier {
       _setLoading(true);
       _clearError();
 
+      final firestore = FirebaseFirestore.instance;
+      
+      // Criar uma referência do documento para obter o UID
+      final docRef = firestore
+          .collection('users')
+          .doc(_client.uid)
+          .collection('irrigation_stations')
+          .doc();
+
       final irrigationStation = IrrigationStation(
-        uid: '',
+        uid: docRef.id, // Usar o UID do documento
         name: name,
         urlMqtt: urlMqtt,
         percentForIrrigation: percentForIrrigation,
         millimetersWater: millimetersWater,
       );
 
-      final firestore = FirebaseFirestore.instance;
-      await firestore
-          .collection('users')
-          .doc(_client.uid)
-          .collection('irrigation_stations')
-          .add(irrigationStation.toMap());
+      // Usar set() em vez de add() para garantir que o UID seja o mesmo
+      await docRef.set(irrigationStation.toMap());
 
       // StreamProvider irá detectar automaticamente a nova estação
       return true;
@@ -242,32 +294,7 @@ class HomeViewModel extends ChangeNotifier {
     }
   }
 
-  // Conectar automaticamente à primeira estação quando estações estão disponíveis
-  Future<void> connectToAllStations(List<IrrigationStation> stations) async {    
-    if (!isMqttConfigured || stations.isEmpty) {
-      return;
-    }
-    
-    if (_mqttService.isConnected) {
-      return;
-    }
 
-    if (_isConnecting) {
-      return;
-    }
-
-    // Cooldown de 10 segundos entre tentativas automáticas (não se aplica à primeira tentativa)
-    if (_lastConnectionAttempt != null) {
-      final timeSinceLastAttempt = DateTime.now().difference(_lastConnectionAttempt!);
-      if (timeSinceLastAttempt.inSeconds < 10) {
-        return;
-      }
-    }
-
-    _lastConnectionAttempt = DateTime.now();
-    final firstStation = stations.first;
-    await connectToStation(firstStation);
-  }
   
   Future<bool> updateMqttConfig(String emailMqtt, String passwordMqtt) async {
     try {
@@ -335,6 +362,14 @@ class HomeViewModel extends ChangeNotifier {
     if (_disposed) return;
     _client = newClient;
     notifyListeners();
+  }
+
+  Future<void> requestSensorReading({String? stationId}) async {
+    if (stationId != null) {
+      await _mqttService.requestSensorReading(stationId);
+    } else {
+      await _mqttService.requestAllSensorsReading();
+    }
   }
 
   void stationControllerPage(BuildContext context, IrrigationStation irrigationStation) {
