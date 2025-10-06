@@ -216,7 +216,7 @@ class _IrrigationStationPageState extends State<IrrigationStationPage> {
 
   Future<void> _showIrrigationDialog(BuildContext context) async {
     final viewModel = Provider.of<IrrigationStationViewModel>(context, listen: false);
-    final TextEditingController mmController = TextEditingController(
+    final TextEditingController mlController = TextEditingController(
       text: this.widget.irrigationStation.millimetersWater.toString()
     );
     
@@ -229,16 +229,16 @@ class _IrrigationStationPageState extends State<IrrigationStationPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Quantos mm de irrigação deseja iniciar?'),
+              const Text('Quantos ml deseja iniciar?'),
               const SizedBox(height: 16),
               TextField(
-                controller: mmController,
+                controller: mlController,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(
-                  labelText: 'Milímetros (mm)',
+                  labelText: 'mililitros (ml)',
                   hintText: 'Ex: 5.0',
                   border: OutlineInputBorder(),
-                  suffixText: 'mm',
+                  suffixText: 'ml',
                 ),
                 autofocus: true,
               ),
@@ -253,20 +253,20 @@ class _IrrigationStationPageState extends State<IrrigationStationPage> {
             ),
             ElevatedButton(
               onPressed: () async {
-                final mmText = mmController.text.trim();
-                
-                if (mmText.isEmpty) {
+                final mlText = mlController.text.trim();
+
+                if (mlText.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Por favor, insira a quantidade de mm.'),
+                      content: Text('Por favor, insira a quantidade de ml.'),
                       backgroundColor: Colors.orange,
                     ),
                   );
                   return;
                 }
-                
-                final mmValue = double.tryParse(mmText);
-                if (mmValue == null || mmValue <= 0) {
+
+                final mlValue = double.tryParse(mlText);
+                if (mlValue == null || mlValue <= 0) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Por favor, insira um valor válido maior que 0.'),
@@ -278,14 +278,14 @@ class _IrrigationStationPageState extends State<IrrigationStationPage> {
                 
                 Navigator.of(context).pop();
                 
-                final success = await viewModel.startIrrigation(mmText);
+                final success = await viewModel.startIrrigation(mlText);
                 
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(
                         success 
-                          ? 'Comando de irrigação ($mmText mm) enviado com sucesso!'
+                          ? 'Comando de irrigação ($mlText ml) enviado com sucesso!'
                           : 'Falha ao enviar comando de irrigação.',
                       ),
                       backgroundColor: success ? Colors.green : Colors.red,
