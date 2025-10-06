@@ -36,7 +36,7 @@ class IrrigationStationViewModel extends ChangeNotifier {
   }
 
   void _onSensorDataReceived(SensorData sensorData) {
-    if (!_disposed) {
+    if (!_disposed && sensorData.stationId == _station.uid) {
       if (_currentSensorData == null) {
         _currentSensorData = sensorData;
       } else {
@@ -48,7 +48,6 @@ class IrrigationStationViewModel extends ChangeNotifier {
           timestamp: sensorData.timestamp,
         );
       }
-      
       notifyListeners();
     }
   }
@@ -56,7 +55,7 @@ class IrrigationStationViewModel extends ChangeNotifier {
   // Getters para expor os dados necessários para a View
   SensorData? get currentSensorData => _currentSensorData;
   
-  bool get isMqttConnected => _mqttService.isConnected;
+  bool get isMqttConnected => _mqttService.isStationConnected(_station.uid);
   
   bool get hasData => _currentSensorData != null;
   
@@ -76,27 +75,27 @@ class IrrigationStationViewModel extends ChangeNotifier {
   }
 
   // Lógica de irrigação
-  Future<bool> startIrrigation(String mm) async {
-    if (!_mqttService.isConnected) {
+  Future<bool> startIrrigation(String ml) async {
+    if (!_mqttService.isStationConnected(_station.uid)) {
       debugPrint('MQTT não conectado para irrigação');
       return false;
     }
 
     try {
-      final mmValue = double.tryParse(mm);
-      if (mmValue == null || mmValue <= 0) {
-        debugPrint('Valor de irrigação inválido: $mm');
+      final mlValue = double.tryParse(ml);
+      if (mlValue == null || mlValue <= 0) {
+        debugPrint('Valor de irrigação inválido: $ml');
         return false;
       }
 
-      // Enviar comando de irrigação via MQTT
-      final success = await _mqttService.publishIrrigationCommand('Irrigar:$mm');
+      // Enviar comando de irrigação via MQTT para esta estação específica
+      final success = await _mqttService.publishIrrigationCommandToStation(_station.uid, 'Irrigar:$ml');
       
       if (success) {
         debugPrint('Comando de irrigação enviado para estação: ${_station.name}');
         
         // Salvar registro de irrigação no Firestore
-        await _saveIrrigationRecord(mmValue);
+        await _saveIrrigationRecord(mlValue);
         
         return true;
       } else {
@@ -114,33 +113,31 @@ class IrrigationStationViewModel extends ChangeNotifier {
     try {
       final firestore = FirebaseFirestore.instance;
       
-      // Criar objeto Data com dados atuais dos sensores e irrigação
-      final irrigationData = Data(
-        uid: _station.uid,
-        date: DateTime.now(),
-        irrigatedMillimeters: millimeters,
-        // Incluir dados dos sensores atuais se disponíveis
-        airHumidity: _currentSensorData?.humidity,
-        soilHumidity: _currentSensorData?.soilMoisture,
-        temperature: _currentSensorData?.temperature,
-      );
-
-      // Salvar na coleção de dados da estação
-      await firestore
+      // Criar uma referência do documento para obter um UID próprio
+      final docRef = firestore
           .collection('users')
           .doc(_userId)
           .collection('irrigation_stations')
           .doc(_station.uid)
           .collection('data')
-          .add(irrigationData.toMap());
-
-      debugPrint('Registro de irrigação salvo no Firestore: ${millimeters}mm');
+          .doc();
       
-      // Recarregar dados históricos
+      final irrigationData = Data(
+        uid: docRef.id,
+        date: DateTime.now(),
+        irrigatedMillimeters: millimeters,
+        airHumidity: _currentSensorData?.humidity,
+        soilHumidity: _currentSensorData?.soilMoisture,
+        temperature: _currentSensorData?.temperature,
+      );
+
+      await docRef.set(irrigationData.toMap());
+
+      debugPrint('Registro de irrigação salvo no Firestore: ${millimeters}ml');
+      
       await _loadHistoricalData();
     } catch (e) {
       debugPrint('Erro ao salvar registro de irrigação: $e');
-      // Não falha a operação principal se der erro ao salvar
     }
   }
 
@@ -219,7 +216,8 @@ class IrrigationStationViewModel extends ChangeNotifier {
   // Método para conectar especificamente a esta estação
   Future<bool> connectToThisStation(String emailMqtt, String passwordMqtt) async {
     try {
-      return await _mqttService.connectToMqtt(
+      return await _mqttService.connectToStation(
+        _station.uid,
         emailMqtt,
         passwordMqtt,
         _station.urlMqtt,
