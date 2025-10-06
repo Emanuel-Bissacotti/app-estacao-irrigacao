@@ -262,17 +262,17 @@ class _AddIrrigationStationDialogState extends State<AddIrrigationStationDialog>
       controller: _millimetersController,
       keyboardType: TextInputType.number,
       decoration: const InputDecoration(
-        labelText: 'Milímetros de Água',
-        hintText: 'Ex: 12.5 (opcional)',
+        labelText: 'Mililitros de Água',
+        hintText: 'Ex: 100 (opcional)',
         border: OutlineInputBorder(),
       ),
       validator: (value) {
         if (value != null && value.isNotEmpty) {
-          final mm = double.tryParse(value);
-          if (mm == null) {
+          final ml = double.tryParse(value);
+          if (ml == null) {
             return 'Digite um número válido';
           }
-          if (mm < 0) {
+          if (ml < 0) {
             return 'Valor deve ser positivo';
           }
         }
