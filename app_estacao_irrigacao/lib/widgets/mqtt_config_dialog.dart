@@ -101,14 +101,14 @@ class _MqttConfigDialogState extends State<MqttConfigDialog> {
               controller: _emailController,
               keyboardType: TextInputType.emailAddress,
               decoration: const InputDecoration(
-                labelText: 'Email MQTT',
-                hintText: 'Digite o email do broker MQTT',
-                prefixIcon: Icon(Icons.email),
+                labelText: 'Username MQTT',
+                hintText: 'Digite o username do broker MQTT',
+                prefixIcon: Icon(Icons.person),
                 border: OutlineInputBorder(),
               ),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
-                  return 'Email é obrigatório';
+                  return 'Username é obrigatório';
                 }
                 return null;
               },
