@@ -67,7 +67,7 @@ export const scheduleDataGet = functions
           
           let irrigatedAmount = 0;
           
-          if (sensorData.soilMoisture !== undefined && sensorData.soilMoisture < station.percentForIrrigation && station.millimetersWater > 0) {
+          if (sensorData.soilMoisture !== undefined && sensorData.soilMoisture <= station.percentForIrrigation && station.millimetersWater > 0) {
             functions.logger.info(`Iniciando irrigação para a estação ${station.uid}`);
             mqttService.publishIrrigationCommand(station.millimetersWater.toString(), station.urlMqtt, station.uid);
             irrigatedAmount = station.millimetersWater;
