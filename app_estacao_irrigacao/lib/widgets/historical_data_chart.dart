@@ -113,11 +113,9 @@ class HistoricalDataChart extends StatelessWidget {
   List<LineChartBarData> _buildLineBarsData() {
     final List<LineChartBarData> bars = [];
 
-    // Ordenar dados por hora para garantir continuidade
     final sortedData = List<Data>.from(data)
       ..sort((a, b) => a.date.compareTo(b.date));
 
-    // Criar segmentos separados para cada tipo de dados
     bars.addAll(_createSegmentedLines(sortedData, 'temperature', Colors.red));
     bars.addAll(_createSegmentedLines(sortedData, 'airHumidity', Colors.cyan));
     bars.addAll(_createSegmentedLines(sortedData, 'soilHumidity', Colors.green));
@@ -235,7 +233,7 @@ class HistoricalDataChart extends StatelessWidget {
         sideTitles: SideTitles(
           showTitles: true,
           reservedSize: 30,
-          interval: 4, // Mostrar a cada 4 horas (0, 4, 8, 12, 16, 20)
+          interval: 4,
           getTitlesWidget: (value, meta) {
             final hour = value.toInt();
             if (hour >= 0 && hour <= 24) {
@@ -276,7 +274,6 @@ class HistoricalDataChart extends StatelessWidget {
         String value = '';
         Color color = Colors.white;
 
-        // Determinar qual tipo de dado baseado no valor Y e disponibilidade
         double? tempDiff = closestDataPoint.temperature != null ? 
             (closestDataPoint.temperature! - yValue).abs() : double.infinity;
         double? airHumDiff = closestDataPoint.airHumidity != null ? 
@@ -284,7 +281,7 @@ class HistoricalDataChart extends StatelessWidget {
         double? soilHumDiff = closestDataPoint.soilHumidity != null ? 
             (closestDataPoint.soilHumidity! - yValue).abs() : double.infinity;
 
-        // Encontrar qual tipo de dado está mais próximo do valor Y tocado
+        // Encontrar qual tipo de dado está mais próximo do valor Y
         if (tempDiff <= airHumDiff && tempDiff <= soilHumDiff && closestDataPoint.temperature != null) {
           label = 'Temperatura';
           value = '${closestDataPoint.temperature!.toStringAsFixed(1)}°C';
@@ -302,10 +299,10 @@ class HistoricalDataChart extends StatelessWidget {
         final time = closestDataPoint.date;
         final timeString = '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
 
-        // Verificar se há irrigação neste ponto
         String irrigationInfo = '';
-        if (closestDataPoint.irrigatedMillimeters != null && closestDataPoint.irrigatedMillimeters! > 0) {
-          irrigationInfo = '\nIrrigação: ${closestDataPoint.irrigatedMillimeters!.toStringAsFixed(1)}ml';
+        final spotIndex = touchedSpots.indexOf(spot);
+        if (spotIndex == 0 && closestDataPoint.irrigatedMillimeters != null && closestDataPoint.irrigatedMillimeters! > 0) {
+          irrigationInfo = '\n💧 Irrigação: ${closestDataPoint.irrigatedMillimeters!.toStringAsFixed(1)}ml';
         }
 
         return LineTooltipItem(
