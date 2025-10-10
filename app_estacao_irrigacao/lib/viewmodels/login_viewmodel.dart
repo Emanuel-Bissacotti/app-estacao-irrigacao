@@ -116,22 +116,34 @@ class LoginViewModel extends ChangeNotifier {
   void _handleAuthException(FirebaseAuthException e) {
     switch (e.code) {
       case 'user-not-found':
-        _setError('Usuário não encontrado');
+        _setError('Usuário não encontrado. Verifique seu email.');
         break;
       case 'wrong-password':
-        _setError('Senha incorreta');
+        _setError('Senha incorreta. Tente novamente.');
+        break;
+      case 'invalid-credential':
+        _setError('Email ou senha incorretos.');
+        break;
+      case 'too-many-requests':
+        _setError('Muitas tentativas. Tente novamente mais tarde.');
+        break;
+      case 'user-disabled':
+        _setError('Esta conta foi desabilitada.');
         break;
       case 'email-already-in-use':
         _setError('Este email já está em uso');
         break;
       case 'weak-password':
-        _setError('A senha é muito fraca');
+        _setError('A senha é muito fraca. Use pelo menos 6 caracteres.');
         break;
       case 'invalid-email':
         _setError('Email inválido');
         break;
+      case 'network-request-failed':
+        _setError('Erro de conexão. Verifique sua internet.');
+        break;
       default:
-        _setError('Erro de autenticação: ${e.message}');
+        _setError('Erro de autenticação. Tente novamente.');
     }
   }
 
